@@ -434,7 +434,7 @@ const setPattern = async (req, res) => {
             }
         }
 
-        const user = userExists || await User.create({ email: useremail, pattern });
+        const user = userExists || await User.create({ email: useremail});
 
        
             const hashedPattern = await bcrypt.hash(pattern, 10);
@@ -462,6 +462,52 @@ const setPattern = async (req, res) => {
     }
 };
 
+const setBiometric = async (req, res) => {
+    const { useremail, authType, biometricToken } = req.body;
+    console.log('Request Body:', req.body); // Debugging log
+
+    try {
+        const userExists = await User.findOne({ where: { email: useremail } });
+
+        if (userExists) {
+            const existingAuth = await Authentication.findOne({ where: { user_id: userExists.user_id } });
+
+            if (existingAuth) {
+                console.log('User already has an authentication method set.'); // Debugging log
+                return res.status(400).json({ message: 'User already has an authentication method set.' });
+            }
+        }
+
+        const user = userExists || await User.create({ email: useremail });
+
+        const hashedToken = await bcrypt.hash(biometricToken, 10);
+        console.log('Hashed Token:', hashedToken); // Debugging log
+
+        await Authentication.create({
+            user_id: user.user_id,
+            auth_type: authType,
+            auth_value: hashedToken
+        });
+
+        console.log('Authentication Created:', { user_id: user.user_id, authType }); // Debugging log
+
+        return res.status(201).json({
+            user_id: user.user_id,
+            message: 'Biometric set successfully!'
+        });
+
+    } catch (error) {
+        console.error('Error setting biometric:', error); // Detailed error logging
+
+        if (error.name === 'SequelizeValidationError') {
+            return res.status(400).json({ message: 'Validation error.', details: error.errors });
+        } else if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ message: 'Unique constraint error.', details: error.errors });
+        } else {
+            return res.status(500).json({ message: 'Server error.', error: error.message });
+        }
+    }
+};
 
 
 module.exports = {
@@ -474,5 +520,6 @@ module.exports = {
     resendRecoveryOtp,
     setPin,
     setDisclaimer,
-    setPattern
+    setPattern,
+    setBiometric
 };

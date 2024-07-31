@@ -1,7 +1,7 @@
 const express = require('express');
 const User = require('../models/Users');
 const db = require('../config/database');
-const {handleSignupMethod, getUser, verifyOtp, resendOtp, recoveryMail, setSecurity, resendRecoveryOtp, setPattern, setPin, setDisclaimer} = require('../controllers/user');
+const {handleSignupMethod, getUser, verifyOtp, resendOtp, recoveryMail, setSecurity, resendRecoveryOtp, setPattern, setPin, setDisclaimer, setBiometric} = require('../controllers/user');
 const { verify } = require('jsonwebtoken');
 const SecurityQuestion = require('../models/SecurityQuestion');
 
@@ -26,5 +26,7 @@ router.post('/setpin', setPin);
 router.post('/disclaimer', setDisclaimer)
 
 router.post('/setpattern', setPattern);
+
+router.post('/setbiometric', setBiometric);
 
 module.exports = router;
