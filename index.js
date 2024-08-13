@@ -25,7 +25,7 @@ app.use(cors());
 app.use(express.json());
 
 // Use routes
-app.use('/api', user_routes);
+app.use('/', user_routes);
 
 const startServer = async () => {
     const isDbConnected = await testDbConnection();
