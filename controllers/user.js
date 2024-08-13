@@ -1,3 +1,4 @@
+const TempUser = require('../models/TempUser'); // Import the TempUser model
 const User = require('../models/Users');
 const Otp = require('../models/OTP');
 const nodemailer = require('nodemailer');
@@ -25,7 +26,7 @@ const resendOtp = async (req, res) => {
         const { email } = req.body;
         console.log('Received email:', email);
 
-        const user = await User.findOne({ where: { email } });
+        const user = await TempUser.findOne({ where: { email } });
         
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -89,7 +90,7 @@ const verifyOtp = async (req, res) => {
         console.log('Received email:', email);
         console.log('Received OTP:', otp);
 
-        const user = await User.findOne({ where: { email } });
+        const user = await TempUser.findOne({ where: { email } });
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -114,14 +115,13 @@ const verifyOtp = async (req, res) => {
     }
 };
 
-
 const recoveryMail = async (req, res) => {
     try {
         const { useremail, recoveryemail, qns1, qns2, ans1, ans2 } = req.body;
 
         console.log('Received recovery email:', recoveryemail);
 
-        const user = await User.findOne({ where: { email: useremail } });
+        const user = await TempUser.findOne({ where: { email: useremail } });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -193,7 +193,7 @@ const setSecurity = async (req, res) => {
 
         console.log('Received security questions:', qns1, qns2, otp, ans1, ans2);
 
-        const user = await User.findOne({ where: { email: useremail } });
+        const user = await TempUser.findOne({ where: { email: useremail } });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -231,8 +231,7 @@ const resendRecoveryOtp = async (req, res) => {
     try {
         const { recoveryemail, useremail } = req.body;
 
-        const user = await User.findOne({ where: { email: useremail } });
-      
+        const user = await TempUser.findOne({ where: { email: useremail } });
 
         const otpCode = Math.floor(100000 + Math.random() * 900000);
 
@@ -289,23 +288,31 @@ const resendRecoveryOtp = async (req, res) => {
     }
 };
 
-
 const handleSignupMethod = async (req, res) => {
     try {
         const { country, email, password } = req.body;
 
+        // Check if the email already exists in the main User table
         const existingUser = await User.findOne({ where: { email } });
         if (existingUser) {
-            return res.status(400).json({ message: 'Email is already used. Please use a different email.' });
+            return res.status(400).json({ message: 'Email is already registered. Please use a different email.' });
         }
 
-    
+        // Check if the email exists in the TempUser table
+        const existingTempUser = await TempUser.findOne({ where: { email } });
+        if (existingTempUser) {
+            // If exists, delete the record from TempUser table
+            await existingTempUser.destroy();
+            console.log(`Deleted existing TempUser record for email: ${email}`);
+        }
+
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        const newUser = await User.create({
+        // Now proceed with creating a new TempUser
+        const newUser = await TempUser.create({
             country,
             email,
-            password: hashedPassword 
+            password: hashedPassword,
         });
 
         const otpCode = Math.floor(100000 + Math.random() * 900000);
@@ -316,7 +323,7 @@ const handleSignupMethod = async (req, res) => {
             user_id: newUser.user_id,
             otp_code: otpCode,
             otp_type: 'signup',
-            created_at: otpExpire
+            created_at: otpExpire,
         });
 
         const transporter = nodemailer.createTransport({
@@ -326,15 +333,15 @@ const handleSignupMethod = async (req, res) => {
             requireTLS: true,
             auth: {
                 user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
+                pass: process.env.EMAIL_PASS,
+            },
         });
 
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: email,
             subject: 'Welcome to BBL Security!',
-            text: `Your OTP for signup (expires in 1 minute): ${otpCode}`
+            text: `Your OTP for signup (expires in 1 minute): ${otpCode}`,
         };
 
         transporter.sendMail(mailOptions, (error, info) => {
@@ -347,7 +354,7 @@ const handleSignupMethod = async (req, res) => {
                     user_id: newUser.user_id,
                     country: newUser.country,
                     email: newUser.email,
-                    created_at: newUser.created_at
+                    created_at: newUser.created_at,
                 });
             }
         });
@@ -357,22 +364,16 @@ const handleSignupMethod = async (req, res) => {
     }
 };
 
-
-
-
-
-
 const setPin = async (req, res) => {
     const { pin, useremail } = req.body;
 
     if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
         return res.status(400).json({ message: 'Invalid PIN format. It must be a 4-digit number.' });
     }
-console.log(useremail);
-    try {
-        const user = await User.findOne({ where: { email: useremail } });
 
-        
+    try {
+        const user = await TempUser.findOne({ where: { email: useremail } });
+
         const existingAuth = await Authentication.findOne({
             where: { user_id: user.user_id }
         });
@@ -382,19 +383,139 @@ console.log(useremail);
         }
 
         const hashedPin = await bcrypt.hash(pin, 10);
-console.log(hashedPin);
+
         await Authentication.create({
             user_id: user.user_id,
             auth_type: 'PIN',
             auth_value: hashedPin
         });
 
-        res.status(201).json({ message: 'PIN set successfully' });
+        // Move user to main User table
+        await User.create({
+            country: user.country,
+            email: user.email,
+            password: user.password,
+            disclaimer: user.disclaimer
+        });
+
+        await user.destroy(); // Remove from TempUsers table
+
+        res.status(201).json({ message: 'PIN set successfully and user verified' });
     } catch (err) {
         console.error('Error setting PIN:', err);
         res.status(500).json({ message: 'Failed to set PIN', error: err.message });
     }
-}
+};
+
+const setPattern = async (req, res) => {
+    const { useremail, pattern } = req.body;
+
+    try {
+        const userExists = await TempUser.findOne({ where: { email: useremail } });
+
+        if (userExists) {
+            const existingAuth = await Authentication.findOne({ where: { user_id: userExists.user_id } });
+
+            if (existingAuth) {
+                return res.status(400).json({ message: 'User already has an authentication method set.' });
+            }
+        }
+
+        const user = userExists;
+
+        const hashedPattern = await bcrypt.hash(pattern, 10);
+
+        await Authentication.create({
+            user_id: user.user_id,
+            auth_type: 'PATTERN',
+            auth_value: hashedPattern
+        });
+
+        // Move user to main User table
+        await User.create({
+            country: user.country,
+            email: user.email,
+            password: user.password,
+            disclaimer: user.disclaimer
+        });
+
+        await user.destroy(); // Remove from TempUsers table
+
+        return res.status(201).json({
+            user_id: user.user_id,
+            message: 'Pattern set successfully and user verified!'
+        });
+       
+    } catch (error) {
+        if (error.name === 'SequelizeValidationError') {
+            return res.status(400).json({ message: 'Validation error.', details: error.errors });
+        } else if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ message: 'Unique constraint error.', details: error.errors });
+        } else {
+            console.error('Error setting pattern:', error);
+            return res.status(500).json({ message: 'Server error.', error: error.message });
+        }
+    }
+};
+
+
+
+const setBiometric = async (req, res) => {
+    const { useremail, authType, biometricToken } = req.body;
+    console.log('Request Body:', req.body); // Debugging log
+
+    try {
+        const userExists = await TempUser.findOne({ where: { email: useremail } });
+
+        if (userExists) {
+            const existingAuth = await Authentication.findOne({ where: { user_id: userExists.user_id } });
+
+            if (existingAuth) {
+                console.log('User already has an authentication method set.'); // Debugging log
+                return res.status(400).json({ message: 'User already has an authentication method set.' });
+            }
+        }
+
+        const user = userExists;
+
+        const hashedToken = await bcrypt.hash(biometricToken, 10);
+        console.log('Hashed Token:', hashedToken); // Debugging log
+
+        await Authentication.create({
+            user_id: user.user_id,
+            auth_type: authType,
+            auth_value: hashedToken
+        });
+
+        // Move user to main User table
+        await User.create({
+            country: user.country,
+            email: user.email,
+            password: user.password,
+            disclaimer: user.disclaimer
+        });
+
+        await user.destroy(); // Remove from TempUsers table
+
+        console.log('Authentication Created:', { user_id: user.user_id, authType }); // Debugging log
+
+        return res.status(201).json({
+            user_id: user.user_id,
+            message: 'Biometric set successfully and user verified!'
+        });
+
+    } catch (error) {
+        console.error('Error setting biometric:', error); // Detailed error logging
+
+        if (error.name === 'SequelizeValidationError') {
+            return res.status(400).json({ message: 'Validation error.', details: error.errors });
+        } else if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ message: 'Unique constraint error.', details: error.errors });
+        } else {
+            return res.status(500).json({ message: 'Server error.', error: error.message });
+        }
+    }
+};
 
 const setDisclaimer = async (req, res) => {
     const { email, call } = req.body;
@@ -403,7 +524,7 @@ const setDisclaimer = async (req, res) => {
     console.log(call);
 
     try {
-        const user = await User.findOne({ where: { email: email } });
+        const user = await TempUser.findOne({ where: { email: email } });
       
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -420,97 +541,6 @@ const setDisclaimer = async (req, res) => {
 };
 
 
-const setPattern = async (req, res) => {
-    const { useremail, pattern } = req.body;
-
-    try {
-        const userExists = await User.findOne({ where: { email: useremail } });
-
-        if (userExists) {
-            const existingAuth = await Authentication.findOne({ where: { user_id: userExists.user_id } });
-
-            if (existingAuth) {
-                return res.status(400).json({ message: 'User already has an authentication method set.' });
-            }
-        }
-
-        const user = userExists || await User.create({ email: useremail});
-
-       
-            const hashedPattern = await bcrypt.hash(pattern, 10);
-
-            await Authentication.create({
-                user_id: user.user_id,
-                auth_type: 'PATTERN',
-                auth_value: hashedPattern
-            });
-
-            return res.status(201).json({
-                
-                user_id: user.user_id,
-                message: 'Pattern set successfully!'
-            });
-       
-    } catch (error) {
-        if (error.name === 'SequelizeValidationError') {
-            return res.status(400).json({ message: 'Validation error.', details: error.errors });
-        } else if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({ message: 'Unique constraint error.', details: error.errors });
-        } else {
-            console.error('Error setting pattern:', error);
-            return res.status(500).json({ message: 'Server error.', error: error.message });
-        }
-    }
-};
-
-const setBiometric = async (req, res) => {
-    const { useremail, authType, biometricToken } = req.body;
-    console.log('Request Body:', req.body); // Debugging log
-
-    try {
-        const userExists = await User.findOne({ where: { email: useremail } });
-
-        if (userExists) {
-            const existingAuth = await Authentication.findOne({ where: { user_id: userExists.user_id } });
-
-            if (existingAuth) {
-                console.log('User already has an authentication method set.'); // Debugging log
-                return res.status(400).json({ message: 'User already has an authentication method set.' });
-            }
-        }
-
-        const user = userExists || await User.create({ email: useremail });
-
-        const hashedToken = await bcrypt.hash(biometricToken, 10);
-        console.log('Hashed Token:', hashedToken); // Debugging log
-
-        await Authentication.create({
-            user_id: user.user_id,
-            auth_type: authType,
-            auth_value: hashedToken
-        });
-
-        console.log('Authentication Created:', { user_id: user.user_id, authType }); // Debugging log
-
-        return res.status(201).json({
-            user_id: user.user_id,
-            message: 'Biometric set successfully!'
-        });
-
-    } catch (error) {
-        console.error('Error setting biometric:', error); // Detailed error logging
-
-        if (error.name === 'SequelizeValidationError') {
-            return res.status(400).json({ message: 'Validation error.', details: error.errors });
-        } else if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({ message: 'Unique constraint error.', details: error.errors });
-        } else {
-            return res.status(500).json({ message: 'Server error.', error: error.message });
-        }
-    }
-};
-
-
 module.exports = {
     getUser,
     handleSignupMethod,
@@ -520,7 +550,7 @@ module.exports = {
     setSecurity,
     resendRecoveryOtp,
     setPin,
-    setDisclaimer,
     setPattern,
-    setBiometric
+    setBiometric,
+    setDisclaimer
 };

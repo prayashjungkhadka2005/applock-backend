@@ -11,7 +11,7 @@ const UserRecoveryEmail = sequelize.define('UserRecoveryEmail', {
     type: Sequelize.INTEGER,
     allowNull: false,
     references: {
-        model: 'Users',
+        model: 'TempUser',
         key: 'user_id',
          onDelete: 'CASCADE'
     }
