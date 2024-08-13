@@ -1,12 +1,12 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const user_routes = require('./routes/user');
+const user_routes = require('../routes/user');
 const cors = require('cors');
-const http = require('http');  // Import the http module
+const http = require('http');
 
-dotenv.config();
+dotenv.config();  // Load environment variables
 
-const sequelize = require('./config/database');
+const sequelize = require('../config/database');
 
 // Test database connection
 const testDbConnection = async () => {
@@ -21,7 +21,7 @@ const testDbConnection = async () => {
 };
 
 const app = express();
-const port = 3000;  // Specify port number
+const port = process.env.PORT || 3000;  // Use the PORT from environment variables, default to 3000
 
 app.use(cors());
 app.use(express.json());

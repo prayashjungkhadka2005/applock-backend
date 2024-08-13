@@ -446,6 +446,7 @@ const setPattern = async (req, res) => {
             });
 
             return res.status(201).json({
+                
                 user_id: user.user_id,
                 message: 'Pattern set successfully!'
             });
