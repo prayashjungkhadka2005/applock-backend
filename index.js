@@ -1,8 +1,8 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const user_routes = require('../routes/user');
+const user_routes = require('./routes/user');
 const cors = require('cors');
-const sequelize = require('../config/database');
+const sequelize = require('./config/database');
 
 dotenv.config();  // Load environment variables
 
@@ -19,6 +19,7 @@ const testDbConnection = async () => {
 };
 
 const app = express();
+const port = process.env.PORT || 3000;  // Use the PORT from environment variables, default to 3000
 
 app.use(cors());
 app.use(express.json());
@@ -26,13 +27,15 @@ app.use(express.json());
 // Use routes
 app.use('/api', user_routes);
 
-const handler = async (req, res) => {
+const startServer = async () => {
     const isDbConnected = await testDbConnection();
     if (isDbConnected) {
-        app(req, res);
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
     } else {
-        res.status(500).json({ error: 'Database connection failed' });
+        console.error('Server did not start due to database connection failure.');
     }
 };
 
-module.exports = handler;
+startServer();
