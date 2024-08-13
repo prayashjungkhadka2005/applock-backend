@@ -2,9 +2,11 @@ const express = require('express');
 const dotenv = require('dotenv');
 const user_routes = require('./routes/user');
 const cors = require('cors');
-const sequelize = require('./config/database');
+const http = require('http');  // Import the http module
 
-dotenv.config();  // Load environment variables
+dotenv.config();
+
+const sequelize = require('./config/database');
 
 // Test database connection
 const testDbConnection = async () => {
@@ -19,13 +21,13 @@ const testDbConnection = async () => {
 };
 
 const app = express();
-const port = process.env.PORT || 3000;  // Use the PORT from environment variables, default to 3000
+const port = 3000;  // Specify port number
 
 app.use(cors());
 app.use(express.json());
 
 // Use routes
-app.use('/', user_routes);
+app.use('', user_routes);
 
 const startServer = async () => {
     const isDbConnected = await testDbConnection();
