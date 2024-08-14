@@ -6,7 +6,7 @@ module.exports = new Sequelize('bblsecurity', 'postgres', 'prayash', {
 
 
     pool: {
-        max: 5,
+        max: 15,
         min: 0,
         acquire: 30000,
         idle: 1000

@@ -1,7 +1,7 @@
 const express = require('express');
 const User = require('../models/Users');
 const db = require('../config/database');
-const {handleSignupMethod, getUser, verifyOtp, resendOtp, recoveryMail, setSecurity, resendRecoveryOtp, setPattern, setPin, setDisclaimer, setBiometric} = require('../controllers/user');
+const { sequelize, handleSignupMethod, getUser, verifyOtp, resendOtp, recoveryMail, setSecurity, resendRecoveryOtp, setPattern, setPin, setDisclaimer, setBiometric} = require('../controllers/user');
 const { verify } = require('jsonwebtoken');
 const SecurityQuestion = require('../models/SecurityQuestion');
 
