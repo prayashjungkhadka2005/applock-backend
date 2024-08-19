@@ -1,10 +1,10 @@
-const TempUser = require('../models/TempUser');
-const User = require('../models/Users');
+const User = require('../models/Users'); // Removed TempUser
 const Otp = require('../models/OTP');
 const nodemailer = require('nodemailer');
 const UserRecoveryEmail = require('../models/UserRecoveryEmail');
 const SecurityQuestion = require('../models/SecurityQuestion');
 const Authentication = require('../models/Authentication');
+const ResetOTP = require('../models/ResetOTP');
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
 require('dotenv').config();
@@ -27,7 +27,7 @@ const resendOtp = async (req, res) => {
         const { email } = req.body;
         console.log('Received email:', email);
 
-        const user = await TempUser.findOne({ where: { email }, transaction });
+        const user = await User.findOne({ where: { email }, transaction }); // Replaced TempUser with User
         if (!user) {
             await transaction.rollback();
             return res.status(404).json({ message: 'User not found' });
@@ -94,7 +94,7 @@ const verifyOtp = async (req, res) => {
         console.log('Received email:', email);
         console.log('Received OTP:', otp);
 
-        const user = await TempUser.findOne({ where: { email } });
+        const user = await User.findOne({ where: { email } }); // Replaced TempUser with User
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -125,7 +125,7 @@ const recoveryMail = async (req, res) => {
 
         console.log('Received recovery email:', recoveryemail);
 
-        const user = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const user = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
         if (!user) {
             await transaction.rollback();
             return res.status(404).json({ message: 'User not found' });
@@ -208,7 +208,7 @@ const setSecurity = async (req, res) => {
 
         console.log('Received security questions:', qns1, qns2, otp, ans1, ans2);
 
-        const user = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const user = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
         if (!user) {
             await transaction.rollback();
             return res.status(404).json({ message: 'User not found' });
@@ -248,12 +248,197 @@ const setSecurity = async (req, res) => {
     }
 };
 
+const verifyResetOtp = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { useremail, otp } = req.body;
+
+        const user = await User.findOne({ where: { email: useremail }, transaction });
+
+        const otpRecord = await Otp.findOne({
+            where: {
+                user_id: user.user_id,
+                otp_code: otp,
+                otp_type: 'forgot'
+            },
+            transaction
+        });
+
+        if (!otpRecord) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Wrong OTP' });
+        }
+
+        return res.status(200).json({ message: 'Reset OTP Validated' });
+    } catch (error) {
+        console.error('Error in verifyResetOtp:', error);
+        await transaction.rollback();
+        return res.status(500).json({ message: 'Internal server error.' });
+    }
+};
+
+const resentResetOtp = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { useremail } = req.body;
+
+        // Find the user by email
+        const user = await User.findOne({ where: { email: useremail }, transaction });
+
+        if (!user) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Generate a new OTP and set its expiry time
+        const otpCode = Math.floor(100000 + Math.random() * 900000);
+        const otpExpire = new Date();
+        otpExpire.setMinutes(otpExpire.getMinutes() + 1);
+
+        // Find the existing OTP record
+        const existingOtp = await Otp.findOne({
+            where: {
+                user_id: user.user_id,
+                otp_type: 'forgot'
+            },
+            transaction
+        });
+
+        // Update the existing OTP or create a new one if it doesn't exist
+        if (existingOtp) {
+            existingOtp.otp_code = otpCode;
+            existingOtp.created_at = otpExpire;
+            await existingOtp.save({ transaction });
+        } else {
+            await Otp.create({
+                user_id: user.user_id,
+                otp_code: otpCode,
+                otp_type: 'forgot',
+                created_at: otpExpire
+            }, { transaction });
+        }
+
+        // Send the OTP via email
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            requireTLS: true,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: useremail,
+            subject: 'Reset OTP BBL Security!',
+            text: `Your OTP for resetting the password (expires in 1 minute): ${otpCode}`,
+        };
+
+        transporter.sendMail(mailOptions, async (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+                await transaction.rollback();
+                return res.status(500).json({ message: 'Failed to send OTP email.' });
+            } else {
+                console.log('Email sent:', info.response);
+                await transaction.commit();
+                return res.status(201).json({
+                    message: 'Reset OTP sent successfully'
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error in resentResetOtp:', error);
+        await transaction.rollback();
+        return res.status(500).json({ error: 'An error occurred' });
+    }
+};
+
+const userForgot = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
+    try {
+        const { email } = req.body;
+
+        const user = await User.findOne({ where: { email } });
+
+        if (!user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+
+        const otpCode = Math.floor(100000 + Math.random() * 900000);
+        const otpExpire = new Date();
+        otpExpire.setMinutes(otpExpire.getMinutes() + 1);
+
+        // Find the existing OTP record
+        const existingOtp = await Otp.findOne({
+            where: {
+                user_id: user.user_id,
+                otp_type: 'forgot'
+            },
+            transaction
+        });
+
+        // Update the existing OTP or create a new one if it doesn't exist
+        if (existingOtp) {
+            existingOtp.otp_code = otpCode;
+            existingOtp.created_at = otpExpire;
+            await existingOtp.save({ transaction });
+        } else {
+            await Otp.create({
+                user_id: user.user_id,
+                otp_code: otpCode,
+                otp_type: 'forgot',
+                created_at: otpExpire,
+            }, { transaction });
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            requireTLS: true,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Reset OTP BBL Security!',
+            text: `Your OTP for reset password (expires in 1 minute): ${otpCode}`,
+        };
+
+        transporter.sendMail(mailOptions, async (error, info) => {
+            if (error) {
+                console.error('Error sending email:', error);
+                await transaction.rollback();
+                return res.status(500).json({ message: 'Failed to send OTP email.' });
+            } else {
+                console.log('Email sent:', info.response);
+                await transaction.commit();
+                return res.status(201).json({
+                    message: 'Reset OTP sent successfully'
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error during login:', error);
+        return res.status(500).json({ message: 'An error occurred during reset', error: error.message });
+    }
+};
+
 const resendRecoveryOtp = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { recoveryemail, useremail } = req.body;
 
-        const user = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const user = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
 
         if (!user) {
             await transaction.rollback();
@@ -324,21 +509,24 @@ const handleSignupMethod = async (req, res) => {
     try {
         const { country, email, password } = req.body;
 
+        // Check if there's an existing incomplete record
         const existingUser = await User.findOne({ where: { email }, transaction });
         if (existingUser) {
-            await transaction.rollback();
-            return res.status(400).json({ message: 'Email is already registered' });
-        }
+            const isAuthSet = await Authentication.findOne({ where: { user_id: existingUser.user_id }, transaction });
 
-        const existingTempUser = await TempUser.findOne({ where: { email }, transaction });
-        if (existingTempUser) {
-            await existingTempUser.destroy({ transaction });
-            console.log(`Deleted existing TempUser record for email: ${email}`);
+            if (!isAuthSet) {
+                await existingUser.destroy({ transaction });
+                console.log(`Deleted incomplete user record for email: ${email}`);
+            } else {
+                // If the record is complete, prevent re-signup
+                await transaction.rollback();
+                return res.status(400).json({ message: 'Email is already registered' });
+            }
         }
 
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        const newUser = await TempUser.create({
+        const newUser = await User.create({
             country,
             email,
             password: hashedPassword,
@@ -406,7 +594,7 @@ const setPin = async (req, res) => {
             return res.status(400).json({ message: 'Invalid PIN format. It must be a 4-digit number.' });
         }
 
-        const user = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const user = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
 
         const existingAuth = await Authentication.findOne({
             where: { user_id: user.user_id },
@@ -418,22 +606,13 @@ const setPin = async (req, res) => {
             return res.status(400).json({ message: 'User already has an authentication method set' });
         }
 
-        const hashedPin = await bcrypt.hash(pin, 10);
+      
 
         await Authentication.create({
             user_id: user.user_id,
             auth_type: 'PIN',
-            auth_value: hashedPin
+            auth_value: pin
         }, { transaction });
-
-        await User.create({
-            country: user.country,
-            email: user.email,
-            password: user.password,
-            disclaimer: user.disclaimer
-        }, { transaction });
-
-        await user.destroy({ transaction });
 
         await transaction.commit();
 
@@ -450,7 +629,7 @@ const setPattern = async (req, res) => {
     try {
         const { useremail, pattern } = req.body;
 
-        const userExists = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const userExists = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
 
         if (!userExists) {
             await transaction.rollback();
@@ -475,22 +654,13 @@ const setPattern = async (req, res) => {
             auth_value: hashedPattern
         }, { transaction });
 
-        await User.create({
-            country: userExists.country,
-            email: userExists.email,
-            password: userExists.password,
-            disclaimer: userExists.disclaimer
-        }, { transaction });
-
-        await userExists.destroy({ transaction });
-
         await transaction.commit();
 
         return res.status(201).json({
             user_id: userExists.user_id,
             message: 'Pattern set successfully and user verified!'
         });
-       
+
     } catch (error) {
         console.error('Error setting pattern:', error);
         await transaction.rollback();
@@ -511,7 +681,7 @@ const setBiometric = async (req, res) => {
         const { useremail, authType, biometricToken } = req.body;
         console.log('Request Body:', req.body);
 
-        const userExists = await TempUser.findOne({ where: { email: useremail }, transaction });
+        const userExists = await User.findOne({ where: { email: useremail }, transaction }); // Replaced TempUser with User
 
         if (!userExists) {
             await transaction.rollback();
@@ -538,15 +708,6 @@ const setBiometric = async (req, res) => {
             auth_value: hashedToken
         }, { transaction });
 
-        await User.create({
-            country: userExists.country,
-            email: userExists.email,
-            password: userExists.password,
-            disclaimer: userExists.disclaimer
-        }, { transaction });
-
-        await userExists.destroy({ transaction });
-
         await transaction.commit();
 
         console.log('Authentication Created:', { user_id: userExists.user_id, authType });
@@ -571,6 +732,70 @@ const setBiometric = async (req, res) => {
     }
 };
 
+const userLogin = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        const user = await User.findOne({ where: { email } });
+
+        if (!user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (!passwordMatch) {
+            return res.status(400).json({ message: 'Email or password incorrect' });
+        }
+
+        const auth = await Authentication.findOne({
+            where: { user_id: user.user_id },
+        });
+
+        if (!auth) {
+            return res.status(400).json({ message: 'No authentication method found for this user.' });
+        }
+
+        // Assuming you're using bcrypt, you can't "decrypt" but instead, you store the raw pin securely
+        const rawPin = auth.auth_value; // You need to handle the raw pin or securely store it before hashing
+        console.log(rawPin);
+
+        return res.status(201).json({ message: 'Login successful', user, pin: rawPin });
+    } catch (error) {
+        console.error('Error during login:', error);
+        return res.status(500).json({ message: 'An error occurred during login', error: error.message });
+    }
+};
+
+const newPassword = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { email, password } = req.body;
+
+        const user = await User.findOne({ where: { email }, transaction });
+
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (passwordMatch) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Enter different password' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        user.password = hashedPassword;
+        await user.save({ transaction });
+
+        await transaction.commit();
+
+        return res.status(201).json({ message: 'Password reset successful' });
+    } catch (error) {
+        console.error('Error updating password:', error);
+        await transaction.rollback();
+        return res.status(500).json({ message: 'An error occurred while updating the password', error: error.message });
+    }
+};
+
 const setDisclaimer = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
@@ -579,7 +804,7 @@ const setDisclaimer = async (req, res) => {
         console.log(email);
         console.log(call);
 
-        const user = await TempUser.findOne({ where: { email: email }, transaction });
+        const user = await User.findOne({ where: { email: email }, transaction });
       
         if (!user) {
             await transaction.rollback();
@@ -591,7 +816,7 @@ const setDisclaimer = async (req, res) => {
 
         await transaction.commit();
 
-        res.status(201).send('Disclaimer updated');
+        return res.status(201).json({ message: 'Disclaimer updated'});
     } catch (err) {
         console.error('Error updating disclaimer:', err);
         await transaction.rollback();
@@ -610,5 +835,10 @@ module.exports = {
     setPin,
     setPattern,
     setBiometric,
+    userLogin,
+    userForgot,
+    verifyResetOtp,
+    resentResetOtp,
+    newPassword,
     setDisclaimer
 };

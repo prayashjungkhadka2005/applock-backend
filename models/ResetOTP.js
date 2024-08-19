@@ -1,7 +1,7 @@
 const Sequelize = require('sequelize');
 const db = require('../config/database');
 
-const OTP = db.define('OTP', {
+const ResetOTP = db.define('ResetOTP', {
     otp_id: {
         type: Sequelize.INTEGER,
         primaryKey: true,
@@ -30,9 +30,9 @@ const OTP = db.define('OTP', {
         defaultValue: Sequelize.NOW
     }
 }, {
-    tableName: 'OTP',
+    tableName: 'ResetOTP',
     timestamps: false
 });
 
 
-module.exports = OTP;
+module.exports = ResetOTP;

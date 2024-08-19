@@ -5,37 +5,36 @@ const db = require('../config/database'); // Adjust this path if necessary
 const Authentication = require('./Authentication');
 const OTP = require('./OTP');
 const SecurityQuestion = require('./SecurityQuestion');
-const TempUser = require('./TempUser');
 const UserRecoveryEmail = require('./UserRecoveryEmail');
-const UserData = require('./Users');
+const Users = require('./Users'); // Replaced TempUser with Users
 
 // Define associations
-TempUser.hasMany(OTP, {
+Users.hasMany(OTP, {
     foreignKey: 'user_id',
     onDelete: 'CASCADE'
 });
-OTP.belongsTo(TempUser, {
+OTP.belongsTo(Users, { // Replaced TempUser with Users
     foreignKey: 'user_id'
 });
 
-TempUser.hasMany(SecurityQuestion, {
+Users.hasMany(SecurityQuestion, {
     foreignKey: 'user_id',
     onDelete: 'CASCADE'
 });
-SecurityQuestion.belongsTo(TempUser, {
+SecurityQuestion.belongsTo(Users, { // Replaced TempUser with Users
     foreignKey: 'user_id'
 });
 
-TempUser.hasMany(UserRecoveryEmail, {
+Users.hasMany(UserRecoveryEmail, {
     foreignKey: 'user_id',
     onDelete: 'CASCADE'
 });
-UserRecoveryEmail.belongsTo(TempUser, {
+UserRecoveryEmail.belongsTo(Users, { // Replaced TempUser with Users
     foreignKey: 'user_id'
 });
 
 // You can define more associations here if needed
-// Example: UserData.hasMany(OtherModel, { foreignKey: 'user_id' });
+// Example: Users.hasMany(OtherModel, { foreignKey: 'user_id' });
 
 module.exports = {
     sequelize: db, // Exporting the Sequelize instance (for transaction management, etc.)
@@ -43,7 +42,6 @@ module.exports = {
     Authentication,
     OTP,
     SecurityQuestion,
-    TempUser,
     UserRecoveryEmail,
-    UserData,
+    Users,         // Replaced TempUser with Users in export
 };

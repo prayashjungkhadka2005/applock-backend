@@ -9,7 +9,12 @@ const Authentication = db.define('Authentication', {
     },
     user_id: {
       type: Sequelize.INTEGER,
-      allowNull: false
+      allowNull: false,
+      references: {
+        model: 'Users',
+        key: 'user_id',
+         onDelete: 'CASCADE'
+    }
     },
     auth_type: {
       type: Sequelize.STRING,

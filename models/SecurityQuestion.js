@@ -11,7 +11,7 @@ const SecurityQuestion = db.define('SecurityQuestion', {
         type: Sequelize.INTEGER,
         allowNull: false,
         references: {
-            model: 'TempUser',
+            model: 'Users',
             key: 'user_id',
             onDelete: 'CASCADE'
         }
